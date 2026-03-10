@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}Team Login — KCC Olympiad{% endblock %}
+
+{% block body %}
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;position:relative;z-index:1;">
+
+  <!-- Decorative rings -->
+  <div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:600px;height:600px;border-radius:50%;border:1px solid rgba(255,215,0,0.05);pointer-events:none;"></div>
+  <div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:800px;height:800px;border-radius:50%;border:1px solid rgba(74,144,226,0.04);pointer-events:none;"></div>
+
+  <div style="width:100%;max-width:440px;padding:2rem;" class="fade-in">
+
+    <!-- Logo/Header -->
+    <div style="text-align:center;margin-bottom:2.5rem;">
+      <div style="font-size:3rem;margin-bottom:0.5rem;">🏆</div>
+      <h1 style="font-family:'Cinzel',serif;font-size:2rem;font-weight:900;background:linear-gradient(135deg,#FFD700,#B8860B,#FFD700);-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:3px;">KCC OLYMPIAD</h1>
+      <p style="color:var(--muted);letter-spacing:4px;font-size:0.8rem;margin-top:0.3rem;text-transform:uppercase;">Mathematics Competition</p>
+    </div>
+
+    <!-- Login Card -->
+    <div class="card">
+      <div class="card-header" style="text-align:center;">Team Login</div>
+
+      {% if messages %}
+      {% for message in messages %}
+      <div class="message {{ message.tags }}" style="margin-bottom:1rem;">{{ message }}</div>
+      {% endfor %}
+      {% endif %}
+
+      <form method="POST">
+        {% csrf_token %}
+        <div class="form-group">
+          <label class="form-label">Team Name</label>
+          <input type="text" name="team_name" class="form-control" placeholder="Enter your team name" required autofocus>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Access Token</label>
+          <input type="text" name="token" class="form-control font-mono" placeholder="••••••••••••••••" required>
+          <div style="font-size:0.8rem;color:var(--muted);margin-top:0.4rem;">Token provided by competition admin</div>
+        </div>
+        <button type="submit" class="btn btn-gold" style="width:100%;justify-content:center;padding:0.75rem;font-size:1rem;margin-top:0.5rem;">
+          Enter Competition →
+        </button>
+      </form>
+    </div>
+
+    <div style="text-align:center;margin-top:1.5rem;">
+      <a href="/admin-panel/login/" style="color:var(--muted);font-size:0.8rem;text-decoration:none;letter-spacing:1px;text-transform:uppercase;">Admin Access</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

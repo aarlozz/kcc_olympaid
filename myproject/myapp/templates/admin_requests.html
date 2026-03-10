@@ -1,0 +1,140 @@
+{% extends 'admin_base.html' %}
+{% block title %}Requests — KCC Olympiad{% endblock %}
+{% block nav_requests %}active{% endblock %}
+
+{% block extra_head %}
+<style>
+.request-card {
+  display:flex;align-items:center;justify-content:space-between;
+  padding:1rem;border-radius:8px;margin-bottom:0.75rem;
+  background:var(--panel2);border:1px solid var(--border);
+  transition:all 0.2s;
+}
+.request-card:hover { border-color:var(--gold);background:rgba(255,215,0,0.02); }
+.request-card.new-request { animation:highlight 0.5s ease; }
+@keyframes highlight {
+  from { background:rgba(255,215,0,0.1);border-color:var(--gold); }
+  to { background:var(--panel2);border-color:var(--border); }
+}
+</style>
+{% endblock %}
+
+{% block admin_content %}
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.3rem;">
+  <div class="page-title">Question Requests</div>
+  <div style="display:flex;gap:0.5rem;">
+    <span class="badge badge-pending">{{ pending|length }} Pending</span>
+    <span class="badge badge-approved">{{ approved|length }} Approved</span>
+  </div>
+</div>
+<div class="page-subtitle">Approve or reject team question requests</div>
+
+<!-- Pending Requests -->
+<div class="card mb-2">
+  <div class="card-header">⏳ Pending Requests ({{ pending|length }})</div>
+
+  {% if pending %}
+    <div id="pending-list">
+      {% for req in pending %}
+      <div class="request-card" id="req-{{ req.pk }}">
+        <div>
+          <div style="font-size:1.1rem;font-weight:700;margin-bottom:0.2rem;">
+            <span style="color:var(--text);">{{ req.team.name }}</span>
+            <span style="color:var(--muted);font-weight:400;"> requested </span>
+            <span style="color:var(--gold);font-family:'Cinzel',serif;">Question {{ req.question.question_number }}</span>
+          </div>
+          <div style="font-size:0.8rem;color:var(--muted);">
+            Round {{ req.round }} &nbsp;·&nbsp; {{ req.requested_at|date:"H:i:s" }}
+          </div>
+        </div>
+        <div style="display:flex;gap:0.5rem;">
+          <form method="POST" style="margin:0;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="approve">
+            <input type="hidden" name="request_id" value="{{ req.pk }}">
+            <button type="submit" class="btn btn-success">✓ Approve &amp; Send</button>
+          </form>
+          <form method="POST" style="margin:0;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="reject">
+            <input type="hidden" name="request_id" value="{{ req.pk }}">
+            <button type="submit" class="btn btn-danger btn-sm">✗ Reject</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div style="text-align:center;padding:3rem;color:var(--muted);" id="no-pending">
+      <div style="font-size:2.5rem;margin-bottom:0.5rem;">✓</div>
+      <div style="font-family:'Cinzel',serif;color:var(--gold);letter-spacing:2px;">All Clear</div>
+      <div style="margin-top:0.5rem;">No pending requests</div>
+    </div>
+  {% endif %}
+</div>
+
+<!-- Approved (waiting for answer) -->
+{% if approved %}
+<div class="card mb-2">
+  <div class="card-header">⚡ Approved — Awaiting Team Answer ({{ approved|length }})</div>
+  {% for req in approved %}
+  <div class="request-card">
+    <div>
+      <span style="font-weight:700;">{{ req.team.name }}</span>
+      <span style="color:var(--muted);"> — </span>
+      <span style="color:var(--accent);font-family:'Cinzel',serif;">Q{{ req.question.question_number }}</span>
+      <span style="color:var(--muted);font-size:0.8rem;"> (Round {{ req.round }}) · Approved {{ req.approved_at|date:"H:i:s" }}</span>
+    </div>
+    <span class="badge badge-approved">Waiting for answer</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- All Requests Log -->
+<div class="card">
+  <div class="card-header">📋 Request Log (Recent 50)</div>
+  <div style="overflow-x:auto;">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Team</th>
+          <th>Round</th>
+          <th>Question</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for req in all_requests %}
+        <tr>
+          <td style="color:var(--muted);font-size:0.85rem;">{{ req.requested_at|date:"H:i:s" }}</td>
+          <td><strong>{{ req.team.name }}</strong></td>
+          <td>{{ req.round }}</td>
+          <td><span style="color:var(--gold);">Q{{ req.question.question_number }}</span></td>
+          <td>
+            <span class="badge badge-{{ req.status }}">{{ req.get_status_display }}</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+// Auto-refresh pending requests
+let lastCount = {{ pending|length }};
+function refreshRequests() {
+  fetch('/api/pending-requests/')
+    .then(r => r.json())
+    .then(data => {
+      if (data.count !== lastCount) {
+        lastCount = data.count;
+        window.location.reload();
+      }
+    }).catch(() => {});
+}
+setInterval(refreshRequests, 4000);
+</script>
+{% endblock %}

@@ -1,0 +1,236 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard — {{ team.name }}{% endblock %}
+
+{% block extra_head %}
+<style>
+.question-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+.q-btn {
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  font-family: 'Cinzel', serif;
+  font-size: 1.3rem;
+  font-weight: 700;
+  border: 2px solid;
+  transition: all 0.25s;
+  position: relative;
+  overflow: hidden;
+  user-select: none;
+}
+.q-btn.available { background:var(--panel2);border-color:var(--border);color:var(--text);cursor:pointer; }
+.q-btn.available:hover {
+  border-color:var(--gold);color:var(--gold);
+  transform:translateY(-3px);box-shadow:0 8px 20px rgba(255,215,0,0.15);
+  background:rgba(255,215,0,0.05);
+}
+.q-btn.requested { background:rgba(243,156,18,0.1);border-color:var(--warning);color:var(--warning);cursor:default; }
+.q-btn.approved {
+  background:rgba(74,144,226,0.15);border-color:var(--accent);color:var(--accent);
+  cursor:pointer;animation:glow-blue 1.5s infinite alternate;
+}
+@keyframes glow-blue {
+  from { box-shadow:0 0 10px rgba(74,144,226,0.3); }
+  to   { box-shadow:0 0 25px rgba(74,144,226,0.7); }
+}
+.q-btn.taken { background:rgba(231,76,60,0.05);border-color:rgba(231,76,60,0.2);color:rgba(231,76,60,0.35);cursor:not-allowed; }
+.q-btn.answered { background:rgba(46,204,113,0.07);border-color:rgba(46,204,113,0.25);color:rgba(46,204,113,0.5);cursor:not-allowed; }
+.q-label { font-size:0.55rem;font-family:'Rajdhani',sans-serif;letter-spacing:1px;text-transform:uppercase;margin-top:0.2rem;opacity:0.85; }
+.approved-banner {
+  background:linear-gradient(135deg,rgba(74,144,226,0.15),rgba(74,144,226,0.05));
+  border:1px solid var(--accent);border-radius:12px;padding:1.5rem;
+  text-align:center;margin-bottom:1.5rem;animation:glow-blue 1.5s infinite alternate;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:2rem;">
+  <div>
+    <div class="page-title">{{ team.name }}</div>
+    <div class="page-subtitle">Competition Dashboard</div>
+  </div>
+  <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
+    <span style="display:inline-flex;align-items:center;padding:0.3rem 1rem;border-radius:20px;
+      background:rgba(255,215,0,0.1);border:1px solid rgba(255,215,0,0.3);
+      font-family:'Cinzel',serif;font-size:0.85rem;color:var(--gold);letter-spacing:2px;">
+      Round {{ active_round }}
+    </span>
+    {% if settings.competition_ended %}<a href="/results/" class="btn btn-gold btn-sm">Final Results</a>{% endif %}
+    <a href="/leaderboard/" class="btn btn-outline btn-sm">Leaderboard</a>
+    <a href="/logout/" class="btn btn-outline btn-sm">Logout</a>
+  </div>
+</div>
+
+{% if pending_approved %}
+<div class="approved-banner fade-in" id="approved-banner">
+  <div style="font-size:1.5rem;margin-bottom:0.4rem;">&#9889;</div>
+  <div style="font-family:'Cinzel',serif;font-size:1.1rem;color:var(--accent);letter-spacing:2px;margin-bottom:0.3rem;">
+    Question {{ pending_approved.question.question_number }} is Ready!
+  </div>
+  <div style="color:var(--muted);font-size:0.9rem;margin-bottom:1rem;">Admin approved — answer now!</div>
+  <a href="/answer/{{ pending_approved.pk }}/" class="btn btn-primary">Answer Now</a>
+</div>
+{% endif %}
+
+<div class="card">
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;">
+    <div style="font-family:'Cinzel',serif;color:var(--gold);font-size:0.9rem;letter-spacing:2px;text-transform:uppercase;">Choose a Question</div>
+    <div style="display:flex;gap:1rem;font-size:0.78rem;color:var(--muted);">
+      <span>Available</span>
+      <span style="color:var(--warning);">Pending</span>
+      <span style="color:var(--accent);">Approved</span>
+      <span style="color:rgba(231,76,60,0.5);">Taken</span>
+      <span style="color:rgba(46,204,113,0.5);">Done</span>
+    </div>
+  </div>
+
+  {% if not settings.competition_started %}
+  <div style="text-align:center;padding:3rem;color:var(--muted);">
+    <div style="font-size:3rem;margin-bottom:1rem;">&#9203;</div>
+    <div style="font-family:'Cinzel',serif;font-size:1.1rem;color:var(--gold);letter-spacing:2px;">Waiting to Begin</div>
+    <div style="margin-top:0.5rem;">The admin will start the competition shortly.</div>
+  </div>
+  {% elif not questions %}
+  <div style="text-align:center;padding:3rem;color:var(--muted);">No questions for Round {{ active_round }} yet.</div>
+  {% else %}
+  <div class="question-grid" id="question-grid">
+    {% for q in questions %}
+    <div class="q-btn available" id="qbtn-{{ q.question_number }}" data-qnum="{{ q.question_number }}">
+      {{ q.question_number }}
+      <div class="q-label" id="qlabel-{{ q.question_number }}">Select</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<div class="grid grid-3 mt-2">
+  <div class="stat-card">
+    <div class="stat-number" id="round-score-display">{{ team.get_total_score }}</div>
+    <div class="stat-label">Round {{ active_round }} Score</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-number">{{ team.get_total_score }}</div>
+    <div class="stat-label">Total Score</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-number">{{ team.answers.count }}</div>
+    <div class="stat-label">Questions Answered</div>
+  </div>
+</div>
+
+{% if timer > 0 %}
+<div class="card mt-2" id="timer-area" style="text-align:center;display:none;">
+  <div style="font-family:'Cinzel',serif;font-size:0.8rem;color:var(--muted);letter-spacing:3px;margin-bottom:0.3rem;">TIME REMAINING</div>
+  <div id="timer-val" style="font-family:'Cinzel',serif;font-size:3.5rem;color:var(--gold);line-height:1;"></div>
+</div>
+{% endif %}
+
+<script>
+const STATUS_MAP   = {{ question_status_json|safe }};
+const APPROVED_MAP = {{ approved_map_json|safe }};
+const LABELS = { available:'Select', requested:'Pending', approved:'Go!', taken:'Taken', answered:'Done' };
+const CSRF = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '';
+
+function applyStatuses() {
+  Object.entries(STATUS_MAP).forEach(([num, status]) => {
+    num = parseInt(num);
+    const btn = document.getElementById('qbtn-' + num);
+    const lbl = document.getElementById('qlabel-' + num);
+    if (!btn) return;
+    btn.className = 'q-btn ' + (status || 'available');
+    if (lbl) lbl.textContent = LABELS[status] || 'Select';
+    btn.onclick = null;
+    if (!status || status === 'available') {
+      btn.onclick = () => requestQuestion(num, btn);
+    } else if (status === 'approved' && APPROVED_MAP[num]) {
+      btn.onclick = () => { window.location = '/answer/' + APPROVED_MAP[num] + '/'; };
+    }
+  });
+}
+document.addEventListener('DOMContentLoaded', applyStatuses);
+
+function requestQuestion(number, btn) {
+  btn.style.opacity = '0.5'; btn.style.pointerEvents = 'none';
+  fetch('/request-question/', {
+    method: 'POST',
+    headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRFToken':CSRF},
+    body: 'question_number=' + number
+  }).then(r => r.json()).then(data => {
+    if (data.success) {
+      btn.className = 'q-btn requested'; btn.onclick = null;
+      btn.style.opacity = '1'; btn.style.pointerEvents = 'none';
+      const lbl = document.getElementById('qlabel-' + number);
+      if (lbl) lbl.textContent = 'Pending';
+      STATUS_MAP[number] = 'requested';
+      toast('Question ' + number + ' requested!', 'success');
+    } else {
+      btn.style.opacity = '1'; btn.style.pointerEvents = 'auto';
+      toast(data.error || 'Failed', 'error');
+    }
+  });
+}
+
+function checkApproval() {
+  fetch('/check-approval/').then(r => r.json()).then(data => {
+    if (data.approved) {
+      const num = data.question_number, rid = data.request_id;
+      APPROVED_MAP[num] = rid; STATUS_MAP[num] = 'approved';
+      const btn = document.getElementById('qbtn-' + num);
+      const lbl = document.getElementById('qlabel-' + num);
+      if (btn) {
+        btn.className = 'q-btn approved';
+        btn.style.pointerEvents = 'auto'; btn.style.opacity = '1';
+        btn.onclick = () => { window.location = '/answer/' + rid + '/'; };
+        if (lbl) lbl.textContent = 'Go!';
+      }
+      if (!document.getElementById('approved-banner')) {
+        const banner = document.createElement('div');
+        banner.id = 'approved-banner'; banner.className = 'approved-banner fade-in';
+        banner.innerHTML = '<div style="font-size:1.5rem;margin-bottom:0.4rem;">&#9889;</div>'
+          + '<div style="font-family:Cinzel,serif;font-size:1.1rem;color:var(--accent);letter-spacing:2px;margin-bottom:0.3rem;">Question ' + num + ' is Ready!</div>'
+          + '<div style="color:var(--muted);font-size:0.9rem;margin-bottom:1rem;">Click to answer now!</div>'
+          + '<a href="/answer/' + rid + '/" class="btn btn-primary">Answer Now</a>';
+        const firstCard = document.querySelector('.card');
+        if (firstCard) firstCard.before(banner);
+      }
+      {% if timer > 0 %}startTimer({{ timer }});{% endif %}
+    }
+  }).catch(() => {});
+}
+setInterval(checkApproval, 3000);
+
+{% if timer > 0 %}
+let timerRunning = false;
+function startTimer(secs) {
+  if (timerRunning) return; timerRunning = true;
+  document.getElementById('timer-area').style.display = 'block';
+  let rem = secs;
+  const el = document.getElementById('timer-val');
+  const iv = setInterval(() => {
+    const m = Math.floor(rem/60), s = rem%60;
+    el.textContent = (m>0?m+':':'') + String(s).padStart(2,'0');
+    if (rem<=10) el.style.color = 'var(--danger)';
+    if (rem<=0) { clearInterval(iv); el.textContent='0:00'; toast('Time is up!','error'); }
+    rem--;
+  }, 1000);
+}
+{% if pending_approved %}startTimer({{ timer }});{% endif %}
+{% endif %}
+
+function toast(msg, type) {
+  const t = document.createElement('div');
+  t.className = 'message ' + type; t.textContent = msg;
+  t.style.cssText = 'position:fixed;top:80px;right:20px;z-index:9999;max-width:320px;animation:fadeIn 0.3s ease;min-width:220px;';
+  document.body.appendChild(t); setTimeout(() => t.remove(), 4000);
+}
+</script>
+{% endblock %}

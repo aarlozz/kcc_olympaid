@@ -1,0 +1,155 @@
+{% extends 'base.html' %}
+{% block title %}Final Results — KCC Olympiad{% endblock %}
+
+{% block extra_head %}
+<style>
+@keyframes confetti-fall {
+  0% { transform: translateY(-100px) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+}
+.confetti-piece {
+  position: fixed;
+  width: 10px; height: 10px;
+  border-radius: 2px;
+  animation: confetti-fall linear infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+.winner-card {
+  background: linear-gradient(135deg, rgba(255,215,0,0.15), rgba(255,215,0,0.05));
+  border: 2px solid rgba(255,215,0,0.4);
+  border-radius: 16px;
+  padding: 2.5rem;
+  text-align: center;
+  margin-bottom: 2rem;
+  position: relative;
+  overflow: hidden;
+}
+.winner-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 0%, rgba(255,215,0,0.1) 0%, transparent 70%);
+}
+.podium-row {
+  display: grid;
+  grid-template-columns: 60px 1fr repeat(4, 90px);
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1.2rem;
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Confetti -->
+<script>
+const colors = ['#FFD700','#4A90E2','#2ECC71','#E74C3C','#9B59B6'];
+for (let i = 0; i < 40; i++) {
+  const el = document.createElement('div');
+  el.className = 'confetti-piece';
+  el.style.cssText = `
+    left:${Math.random()*100}%;
+    background:${colors[Math.floor(Math.random()*colors.length)]};
+    animation-duration:${3+Math.random()*4}s;
+    animation-delay:${Math.random()*3}s;
+    width:${6+Math.random()*8}px;
+    height:${6+Math.random()*8}px;
+    border-radius:${Math.random()>0.5?'50%':'2px'};
+  `;
+  document.body.appendChild(el);
+}
+</script>
+
+<div style="max-width:900px;margin:0 auto;position:relative;z-index:1;">
+  <!-- Header -->
+  <div style="text-align:center;margin-bottom:2rem;">
+    <div style="font-size:3rem;margin-bottom:0.5rem;">🏆</div>
+    <h1 style="font-family:'Cinzel',serif;font-size:2.5rem;color:var(--gold);letter-spacing:3px;">FINAL RESULTS</h1>
+    <p style="color:var(--muted);letter-spacing:4px;font-size:0.85rem;margin-top:0.3rem;">KCC OLYMPIAD — MATHEMATICS COMPETITION</p>
+  </div>
+
+  <!-- Winner Spotlight -->
+  {% if winner %}
+  <div class="winner-card">
+    <div style="font-size:4rem;margin-bottom:0.5rem;">👑</div>
+    <div style="font-family:'Cinzel',serif;font-size:0.8rem;letter-spacing:4px;color:var(--muted);text-transform:uppercase;margin-bottom:0.5rem;">Champion</div>
+    <div style="font-family:'Cinzel',serif;font-size:2.5rem;font-weight:900;color:var(--gold);margin-bottom:0.5rem;">
+      {{ winner.team.name }}
+    </div>
+    <div style="font-family:'Cinzel',serif;font-size:3rem;color:var(--gold);">{{ winner.total }}</div>
+    <div style="color:var(--muted);font-size:0.85rem;letter-spacing:2px;">Total Points</div>
+
+    <div style="display:flex;justify-content:center;gap:2rem;margin-top:1.5rem;">
+      <div style="text-align:center;">
+        <div style="font-size:1.5rem;color:var(--text);">{{ winner.round1 }}</div>
+        <div style="font-size:0.75rem;color:var(--muted);letter-spacing:1px;">Round 1</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="font-size:1.5rem;color:var(--text);">{{ winner.round2 }}</div>
+        <div style="font-size:0.75rem;color:var(--muted);letter-spacing:1px;">Round 2</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="font-size:1.5rem;color:var(--text);">{{ winner.round3 }}</div>
+        <div style="font-size:0.75rem;color:var(--muted);letter-spacing:1px;">Round 3</div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Full Results Table -->
+  <div class="card">
+    <div class="card-header">Final Standings</div>
+
+    <div style="display:grid;grid-template-columns:60px 1fr repeat(4,90px);gap:0.5rem;
+      padding:0.5rem 1.2rem;font-size:0.7rem;letter-spacing:2px;color:var(--muted);
+      border-bottom:1px solid var(--border);margin-bottom:0.75rem;font-family:'Cinzel',serif;">
+      <div>Rank</div><div>Team</div>
+      <div style="text-align:center;">R1</div>
+      <div style="text-align:center;">R2</div>
+      <div style="text-align:center;">R3</div>
+      <div style="text-align:center;">Total</div>
+    </div>
+
+    {% for entry in leaderboard %}
+    <div class="podium-row" style="
+      {% if entry.rank == 1 %}background:linear-gradient(135deg,rgba(255,215,0,0.1),rgba(255,215,0,0.03));border:1px solid rgba(255,215,0,0.25);
+      {% elif entry.rank == 2 %}background:rgba(192,192,192,0.05);border:1px solid rgba(192,192,192,0.15);
+      {% elif entry.rank == 3 %}background:rgba(205,127,50,0.05);border:1px solid rgba(205,127,50,0.15);
+      {% else %}border:1px solid transparent;{% endif %}">
+      <div style="font-family:'Cinzel',serif;font-size:1.2rem;text-align:center;">
+        {% if entry.rank == 1 %}🥇
+        {% elif entry.rank == 2 %}🥈
+        {% elif entry.rank == 3 %}🥉
+        {% else %}<span style="color:var(--muted);">#{{ entry.rank }}</span>
+        {% endif %}
+      </div>
+      <div style="font-weight:700;
+        {% if entry.rank == 1 %}color:var(--gold);
+        {% elif entry.rank == 2 %}color:#C0C0C0;
+        {% elif entry.rank == 3 %}color:#CD7F32;{% endif %}">
+        {{ entry.team.name }}
+      </div>
+      <div style="text-align:center;color:var(--muted);">{{ entry.round1 }}</div>
+      <div style="text-align:center;color:var(--muted);">{{ entry.round2 }}</div>
+      <div style="text-align:center;color:var(--muted);">{{ entry.round3 }}</div>
+      <div style="text-align:center;font-family:'Cinzel',serif;font-size:1.2rem;
+        {% if entry.rank == 1 %}color:var(--gold);font-weight:700;
+        {% elif entry.rank == 2 %}color:#C0C0C0;
+        {% elif entry.rank == 3 %}color:#CD7F32;
+        {% else %}color:var(--text);{% endif %}">
+        {{ entry.total }}
+      </div>
+    </div>
+    {% empty %}
+    <div style="text-align:center;padding:3rem;color:var(--muted);">No results available</div>
+    {% endfor %}
+  </div>
+
+  <div style="text-align:center;margin-top:2rem;">
+    <a href="/leaderboard/" class="btn btn-outline">← Back to Leaderboard</a>
+  </div>
+</div>
+{% endblock %}

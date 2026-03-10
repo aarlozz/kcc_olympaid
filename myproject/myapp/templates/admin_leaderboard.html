@@ -1,0 +1,81 @@
+{% extends 'admin_base.html' %}
+{% block title %}Leaderboard — KCC Olympiad{% endblock %}
+{% block nav_leaderboard %}active{% endblock %}
+
+{% block admin_content %}
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.3rem;">
+  <div class="page-title">Live Leaderboard</div>
+  <a href="/leaderboard/" target="_blank" class="btn btn-outline btn-sm">📺 Public View</a>
+</div>
+<div class="page-subtitle">Auto-updates every 5 seconds</div>
+
+<div class="card" id="leaderboard-card">
+  <table class="table" id="leaderboard-table">
+    <thead>
+      <tr>
+        <th style="width:50px;">Rank</th>
+        <th>Team</th>
+        <th style="text-align:center;">Round 1</th>
+        <th style="text-align:center;">Round 2</th>
+        <th style="text-align:center;">Round 3</th>
+        <th style="text-align:center;">Total</th>
+      </tr>
+    </thead>
+    <tbody id="lb-body">
+      {% for entry in leaderboard %}
+      <tr style="{% if entry.rank == 1 %}background:rgba(255,215,0,0.05);{% endif %}">
+        <td>
+          {% if entry.rank == 1 %}🥇
+          {% elif entry.rank == 2 %}🥈
+          {% elif entry.rank == 3 %}🥉
+          {% else %}#{{ entry.rank }}{% endif %}
+        </td>
+        <td>
+          <strong style="{% if entry.rank == 1 %}color:var(--gold);{% endif %}">{{ entry.team.name }}</strong>
+        </td>
+        <td style="text-align:center;color:var(--muted);">{{ entry.round1 }}</td>
+        <td style="text-align:center;color:var(--muted);">{{ entry.round2 }}</td>
+        <td style="text-align:center;color:var(--muted);">{{ entry.round3 }}</td>
+        <td style="text-align:center;">
+          <span style="font-family:'Cinzel',serif;font-size:1.1rem;
+            {% if entry.rank == 1 %}color:var(--gold);font-weight:700;
+            {% elif entry.rank == 2 %}color:#C0C0C0;
+            {% elif entry.rank == 3 %}color:#CD7F32;
+            {% else %}color:var(--text);{% endif %}">
+            {{ entry.total }}
+          </span>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:2rem;">No scores yet</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+function refreshLeaderboard() {
+  fetch('/api/leaderboard/')
+    .then(r => r.json())
+    .then(data => {
+      const tbody = document.getElementById('lb-body');
+      const medals = ['🥇','🥈','🥉'];
+      tbody.innerHTML = data.leaderboard.map((e, i) => `
+        <tr style="${i===0?'background:rgba(255,215,0,0.05);':''}">
+          <td>${medals[i] || '#'+(i+1)}</td>
+          <td><strong style="${i===0?'color:var(--gold);':''}">${e.name}</strong></td>
+          <td style="text-align:center;color:var(--muted);">${e.round1}</td>
+          <td style="text-align:center;color:var(--muted);">${e.round2}</td>
+          <td style="text-align:center;color:var(--muted);">${e.round3}</td>
+          <td style="text-align:center;">
+            <span style="font-family:'Cinzel',serif;font-size:1.1rem;color:${i===0?'var(--gold)':i===1?'#C0C0C0':i===2?'#CD7F32':'var(--text)'}">
+              ${e.total}
+            </span>
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:2rem;">No scores yet</td></tr>';
+    }).catch(()=>{});
+}
+setInterval(refreshLeaderboard, 5000);
+</script>
+{% endblock %}

@@ -1,0 +1,122 @@
+{% extends 'admin_base.html' %}
+{% block title %}Questions — KCC Olympiad{% endblock %}
+{% block nav_questions %}active{% endblock %}
+
+{% block admin_content %}
+<div class="page-title">Questions</div>
+<div class="page-subtitle">Upload and manage competition questions</div>
+
+<div class="grid grid-2 mb-2">
+  <!-- Upload -->
+  <div class="card">
+    <div class="card-header">Upload Excel File</div>
+    <form method="POST" enctype="multipart/form-data">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="upload">
+      <div class="form-group">
+        <label class="form-label">Excel File (.xlsx)</label>
+        <input type="file" name="excel_file" accept=".xlsx,.xls" class="form-control" required>
+      </div>
+      <div style="background:var(--panel2);border:1px solid var(--border);border-radius:6px;padding:0.8rem;margin-bottom:1rem;font-size:0.8rem;color:var(--muted);">
+        <strong style="color:var(--gold);">Multi-sheet (recommended):</strong><br>
+        Name each sheet "Round 1", "Round 2", "Round 3"<br>
+        Columns per sheet: <span style="color:var(--text);">#, Question, Option A, Option B, Option C, Option D, Answer</span><br><br>
+        <strong style="color:var(--gold);">Single-sheet:</strong><br>
+        Columns: <span style="color:var(--text);">Round, Question_Number, Question, Option_A, Option_B, Option_C, Option_D, Answer</span>
+      </div>
+      <button type="submit" class="btn btn-gold">📤 Upload Questions</button>
+    </form>
+  </div>
+
+  <!-- Quick Actions -->
+  <div class="card">
+    <div class="card-header">Actions</div>
+    <div style="display:flex;flex-direction:column;gap:0.75rem;">
+      <form method="POST">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="unlock_all">
+        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;">🔓 Unlock All Questions</button>
+      </form>
+      <form method="POST" onsubmit="return confirm('Delete ALL questions?')">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="delete_all">
+        <button type="submit" class="btn btn-danger" style="width:100%;justify-content:center;">🗑 Delete All Questions</button>
+      </form>
+    </div>
+
+    <hr>
+    <div style="font-size:0.8rem;color:var(--muted);">
+      <strong style="color:var(--gold);">Example Excel row:</strong><br>
+      Round: 1 | Q#: 1 | Question: What is 2+2? | A: 2 | B: 3 | C: 4 | D: 5 | Answer: C
+    </div>
+  </div>
+</div>
+
+<!-- Questions by Round -->
+{% for round_num, questions in questions_by_round.items %}
+<div class="card mb-2">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+    <div class="card-header" style="margin:0;border:none;padding:0;">
+      Round {{ round_num }} — {{ questions|length }} Questions
+    </div>
+    <div style="display:flex;gap:0.5rem;align-items:center;">
+      <span style="font-size:0.85rem;color:var(--muted);">
+        Locked: {{ questions|length }} questions
+      </span>
+    </div>
+  </div>
+
+  {% if questions %}
+  <div style="overflow-x:auto;">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Q#</th>
+          <th>Question</th>
+          <th>A</th>
+          <th>B</th>
+          <th>C</th>
+          <th>D</th>
+          <th>Answer</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for q in questions %}
+        <tr>
+          <td><strong style="color:var(--gold);">{{ q.question_number }}</strong></td>
+          <td style="max-width:250px;">{{ q.question_text|truncatechars:80 }}</td>
+          <td style="color:var(--muted);">{{ q.option_a|truncatechars:30 }}</td>
+          <td style="color:var(--muted);">{{ q.option_b|truncatechars:30 }}</td>
+          <td style="color:var(--muted);">{{ q.option_c|truncatechars:30 }}</td>
+          <td style="color:var(--muted);">{{ q.option_d|truncatechars:30 }}</td>
+          <td><span style="font-family:'Cinzel',serif;color:var(--success);font-weight:700;">{{ q.correct_answer }}</span></td>
+          <td>
+            {% if q.is_locked %}
+              <span class="badge badge-rejected">Locked</span>
+            {% else %}
+              <span class="badge badge-answered">Available</span>
+            {% endif %}
+          </td>
+          <td>
+            <form method="POST" style="margin:0;">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="{% if q.is_locked %}unlock{% else %}lock{% endif %}">
+              <input type="hidden" name="question_id" value="{{ q.pk }}">
+              <button type="submit" class="btn btn-outline btn-sm">
+                {% if q.is_locked %}🔓{% else %}🔒{% endif %}
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:2rem;color:var(--muted);">No questions for Round {{ round_num }}</div>
+  {% endif %}
+</div>
+{% endfor %}
+{% endblock %}

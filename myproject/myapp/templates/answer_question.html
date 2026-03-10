@@ -1,0 +1,129 @@
+{% extends 'base.html' %}
+{% block title %}Answer — Q{{ question.question_number }}{% endblock %}
+
+{% block extra_head %}
+<style>
+.option-label {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.2rem;
+  border-radius: 8px;
+  border: 2px solid var(--border);
+  background: var(--panel2);
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 0.75rem;
+  font-size: 1rem;
+  font-weight: 500;
+}
+.option-label:hover {
+  border-color: var(--accent);
+  background: rgba(74,144,226,0.07);
+}
+input[type=radio]:checked + .option-label {
+  border-color: var(--gold);
+  background: rgba(255,215,0,0.07);
+  color: var(--gold);
+}
+.option-letter {
+  width: 36px; height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  font-family: 'Cinzel', serif;
+  font-size: 1rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+input[type=radio]:checked ~ * .option-letter {
+  background: var(--gold);
+  color: var(--deep);
+}
+.radio-wrap { position: relative; }
+.radio-wrap input[type=radio] { position: absolute; opacity: 0; width: 0; }
+.radio-wrap:has(input:checked) .option-label {
+  border-color: var(--gold);
+  background: rgba(255,215,0,0.07);
+}
+.radio-wrap:has(input:checked) .option-letter {
+  background: var(--gold);
+  color: var(--deep);
+  border-color: var(--gold);
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:680px;margin:0 auto;">
+  <!-- Header -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2rem;flex-wrap:wrap;gap:1rem;">
+    <div>
+      <div class="page-title">Question {{ question.question_number }}</div>
+      <div class="page-subtitle">Round {{ q_request.round }} · {{ team.name }}</div>
+    </div>
+    {% if timer > 0 %}
+    <div style="text-align:center;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:0.5rem 1.2rem;">
+      <div style="font-size:0.65rem;letter-spacing:3px;color:var(--muted);text-transform:uppercase;">Time</div>
+      <div id="timer" style="font-family:'Cinzel',serif;font-size:1.8rem;color:var(--gold);line-height:1.2;">
+        {{ timer }}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Question Card -->
+  <div class="card" style="margin-bottom:1.5rem;">
+    <div style="font-size:1.1rem;font-weight:600;line-height:1.6;color:var(--text);">
+      {{ question.question_text }}
+    </div>
+  </div>
+
+  <!-- Answer Form -->
+  <form method="POST" id="answer-form">
+    {% csrf_token %}
+    <div class="card">
+      <div class="card-header">Select Your Answer</div>
+
+      {% for letter, text in options %}
+      <div class="radio-wrap">
+        <input type="radio" name="answer" id="opt{{ letter }}" value="{{ letter }}" required>
+        <label for="opt{{ letter }}" class="option-label">
+          <span class="option-letter">{{ letter }}</span>
+          <span>{{ text }}</span>
+        </label>
+      </div>
+      {% endfor %}
+
+      <div style="margin-top:1.5rem;display:flex;gap:1rem;align-items:center;">
+        <button type="submit" class="btn btn-gold" style="padding:0.7rem 2rem;font-size:1rem;"
+          onclick="return confirm('Submit this answer? You cannot change it later.')">
+          Submit Answer →
+        </button>
+        <span style="font-size:0.8rem;color:var(--muted);">This action is final</span>
+      </div>
+    </div>
+  </form>
+</div>
+
+{% if timer > 0 %}
+<script>
+let seconds = {{ timer }};
+const el = document.getElementById('timer');
+const iv = setInterval(() => {
+  seconds--;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  el.textContent = (m > 0 ? m + ':' : '') + String(s).padStart(2,'0');
+  if (seconds <= 10) el.style.color = 'var(--danger)';
+  if (seconds <= 0) {
+    clearInterval(iv);
+    el.textContent = '0:00';
+    document.getElementById('answer-form').submit();
+  }
+}, 1000);
+</script>
+{% endif %}
+{% endblock %}

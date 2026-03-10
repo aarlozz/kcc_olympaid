@@ -1,0 +1,76 @@
+{% extends 'admin_base.html' %}
+{% block title %}Scoring — KCC Olympiad{% endblock %}
+{% block nav_scoring %}active{% endblock %}
+
+{% block admin_content %}
+<div class="page-title">Scoring Panel</div>
+<div class="page-subtitle">Review answers and assign points to teams</div>
+
+{% if answers %}
+<div style="overflow-x:auto;">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Team</th>
+        <th>Round</th>
+        <th>Question</th>
+        <th>Answer</th>
+        <th>Correct?</th>
+        <th>Points</th>
+        <th>Save</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ans in answers %}
+      <tr>
+        <td style="color:var(--muted);font-size:0.8rem;">{{ ans.submitted_at|date:"H:i:s" }}</td>
+        <td><strong>{{ ans.team.name }}</strong></td>
+        <td style="color:var(--muted);">{{ ans.round }}</td>
+        <td><span style="color:var(--gold);">Q{{ ans.question.question_number }}</span></td>
+        <td>
+          <span style="font-family:'Cinzel',serif;font-size:1.1rem;color:var(--text);">{{ ans.selected_answer }}</span>
+          <span style="font-size:0.75rem;color:var(--muted);margin-left:4px;">({{ ans.question.get_option_selected|default:ans.selected_answer }})</span>
+        </td>
+        <td>
+          {% if ans.is_correct %}
+            <span style="color:var(--success);font-size:1.1rem;">✓</span>
+            <span style="font-size:0.75rem;color:var(--success);">Correct</span>
+          {% else %}
+            <span style="color:var(--danger);font-size:1.1rem;">✗</span>
+            <span style="font-size:0.75rem;color:var(--danger);">Wrong</span>
+          {% endif %}
+        </td>
+        <td>
+          <form method="POST" style="margin:0;display:flex;gap:0.4rem;align-items:center;">
+            {% csrf_token %}
+            {% if ans.score %}
+              <input type="hidden" name="score_id" value="{{ ans.score.pk }}">
+              <input type="number" name="points" value="{{ ans.score.points }}"
+                min="0" max="100" class="form-control"
+                style="width:70px;padding:0.3rem 0.5rem;text-align:center;">
+              <input type="text" name="note" value="{{ ans.score.note }}" placeholder="Note"
+                class="form-control" style="width:100px;padding:0.3rem 0.5rem;font-size:0.8rem;">
+            {% else %}
+              <span style="color:var(--muted);font-size:0.85rem;">No score record</span>
+            {% endif %}
+        </td>
+        <td>
+              {% if ans.score %}
+              <button type="submit" class="btn btn-success btn-sm">Save</button>
+              {% endif %}
+            </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card" style="text-align:center;padding:4rem;">
+  <div style="font-size:3rem;margin-bottom:1rem;">📝</div>
+  <div style="font-family:'Cinzel',serif;font-size:1.1rem;color:var(--gold);letter-spacing:2px;">No Answers Yet</div>
+  <div style="color:var(--muted);margin-top:0.5rem;">Answers will appear here once teams submit them.</div>
+</div>
+{% endif %}
+{% endblock %}

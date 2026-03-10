@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+
+{% block body %}
+<div class="admin-layout">
+  <!-- Sidebar -->
+  <aside class="admin-sidebar">
+    <div style="padding:0 1.2rem 1rem;border-bottom:1px solid var(--border);margin-bottom:0.5rem;">
+      <div style="font-family:'Cinzel',serif;font-size:0.75rem;color:var(--gold);letter-spacing:3px;text-transform:uppercase;">Control Panel</div>
+    </div>
+
+    <div class="sidebar-section">Overview</div>
+    <a href="/admin-panel/" class="sidebar-link {% block nav_dashboard %}{% endblock %}">
+      <span class="sidebar-icon">📊</span> Dashboard
+      <span id="pending-badge" class="nav-badge" style="display:none;margin-left:auto;"></span>
+    </a>
+
+    <div class="sidebar-section">Competition</div>
+    <a href="/admin-panel/settings/" class="sidebar-link {% block nav_settings %}{% endblock %}">
+      <span class="sidebar-icon">⚙️</span> Settings & Rounds
+    </a>
+    <a href="/admin-panel/teams/" class="sidebar-link {% block nav_teams %}{% endblock %}">
+      <span class="sidebar-icon">👥</span> Teams & Tokens
+    </a>
+    <a href="/admin-panel/questions/" class="sidebar-link {% block nav_questions %}{% endblock %}">
+      <span class="sidebar-icon">📋</span> Questions
+    </a>
+
+    <div class="sidebar-section">Live Control</div>
+    <a href="/admin-panel/requests/" class="sidebar-link {% block nav_requests %}{% endblock %}">
+      <span class="sidebar-icon">📨</span> Requests
+      <span id="sidebar-pending" class="nav-badge" style="display:none;margin-left:auto;"></span>
+    </a>
+    <a href="/admin-panel/scoring/" class="sidebar-link {% block nav_scoring %}{% endblock %}">
+      <span class="sidebar-icon">✏️</span> Scoring
+    </a>
+    <a href="/admin-panel/leaderboard/" class="sidebar-link {% block nav_leaderboard %}{% endblock %}">
+      <span class="sidebar-icon">🏆</span> Leaderboard
+    </a>
+
+    <div class="sidebar-section">Links</div>
+    <a href="/leaderboard/" class="sidebar-link" target="_blank">
+      <span class="sidebar-icon">📺</span> Public Board
+    </a>
+    <a href="/results/" class="sidebar-link" target="_blank">
+      <span class="sidebar-icon">🎯</span> Final Results
+    </a>
+
+    <div style="border-top:1px solid var(--border);margin-top:1rem;padding-top:1rem;">
+      <a href="/admin-panel/logout/" class="sidebar-link">
+        <span class="sidebar-icon">🚪</span> Logout
+      </a>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="admin-main fade-in">
+    {% if messages %}
+      {% for message in messages %}
+        <div class="message {{ message.tags }}" style="margin-bottom:0.5rem;">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+    {% block admin_content %}{% endblock %}
+  </main>
+</div>
+
+<script>
+// Poll pending requests count
+function updatePendingCount() {
+  fetch('/api/pending-requests/')
+    .then(r => r.json())
+    .then(data => {
+      const count = data.count || 0;
+      ['pending-badge', 'sidebar-pending'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.textContent = count;
+          el.style.display = count > 0 ? 'inline' : 'none';
+        }
+      });
+    }).catch(() => {});
+}
+updatePendingCount();
+setInterval(updatePendingCount, 5000);
+</script>
+{% endblock %}

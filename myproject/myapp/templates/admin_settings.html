@@ -1,0 +1,109 @@
+{% extends 'admin_base.html' %}
+{% block title %}Settings — KCC Olympiad{% endblock %}
+{% block nav_settings %}active{% endblock %}
+
+{% block admin_content %}
+<div class="page-title">Settings & Rounds</div>
+<div class="page-subtitle">Control competition flow and timers</div>
+
+<div class="grid grid-2 mb-2">
+  <!-- Competition Control -->
+  <div class="card">
+    <div class="card-header">Competition Control</div>
+    <div style="display:flex;flex-direction:column;gap:0.75rem;">
+
+      <div style="padding:1rem;background:var(--panel2);border-radius:8px;border:1px solid var(--border);">
+        <div style="font-size:0.8rem;color:var(--muted);margin-bottom:0.5rem;">Current Status</div>
+        <div style="font-family:'Cinzel',serif;font-size:1.1rem;
+          {% if settings.competition_ended %}color:var(--danger);
+          {% elif settings.competition_started %}color:var(--success);
+          {% else %}color:var(--warning);{% endif %}">
+          {% if settings.competition_ended %}Competition Ended
+          {% elif settings.competition_started %}● LIVE — Round {{ settings.active_round }}
+          {% else %}Not Started{% endif %}
+        </div>
+      </div>
+
+      {% if not settings.competition_started %}
+      <form method="POST">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="start">
+        <button type="submit" class="btn btn-success" style="width:100%;justify-content:center;">▶ Start Competition</button>
+      </form>
+      {% endif %}
+
+      {% if settings.competition_started and not settings.competition_ended %}
+      <form method="POST">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="end">
+        <button type="submit" class="btn btn-danger" style="width:100%;justify-content:center;"
+          onclick="return confirm('End the competition? This will show final results.')">■ End Competition</button>
+      </form>
+      {% endif %}
+
+      <form method="POST" onsubmit="return confirm('RESET everything? This deletes all answers, scores and requests!')">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="reset">
+        <button type="submit" class="btn btn-outline" style="width:100%;justify-content:center;border-color:var(--danger);color:var(--danger);">
+          ⚠ Reset Competition
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Round Control -->
+  <div class="card">
+    <div class="card-header">Active Round</div>
+    <div style="font-size:0.9rem;color:var(--muted);margin-bottom:1rem;">
+      Current active round: <strong style="color:var(--gold);">Round {{ settings.active_round }}</strong>
+    </div>
+    <div style="display:flex;gap:0.75rem;margin-bottom:1.5rem;">
+      {% for r in "123" %}
+      <form method="POST" style="flex:1;">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="set_round">
+        <input type="hidden" name="round" value="{{ r }}">
+        <button type="submit" class="btn {% if settings.active_round == r|add:0 %}btn-gold{% else %}btn-outline{% endif %}"
+          style="width:100%;justify-content:center;">
+          Round {{ r }}
+        </button>
+      </form>
+      {% endfor %}
+    </div>
+    <div style="font-size:0.8rem;color:var(--muted);">
+      Changing the round will update the team dashboard immediately.
+    </div>
+  </div>
+</div>
+
+<!-- Timer Settings -->
+<div class="card">
+  <div class="card-header">Round Timers (Optional)</div>
+  <form method="POST">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="update_timers">
+    <div class="grid grid-3" style="margin-bottom:1rem;">
+      <div class="form-group" style="margin:0;">
+        <label class="form-label">Round 1 Timer (seconds)</label>
+        <input type="number" name="round1_timer" value="{{ settings.round1_timer }}"
+          min="0" max="3600" class="form-control" placeholder="0 = no timer">
+        <div style="font-size:0.75rem;color:var(--muted);margin-top:0.3rem;">
+          {{ settings.round1_timer }} sec = {% if settings.round1_timer %}{{ settings.round1_timer|floatformat:0 }} seconds{% else %}No timer{% endif %}
+        </div>
+      </div>
+      <div class="form-group" style="margin:0;">
+        <label class="form-label">Round 2 Timer (seconds)</label>
+        <input type="number" name="round2_timer" value="{{ settings.round2_timer }}"
+          min="0" max="3600" class="form-control" placeholder="0 = no timer">
+      </div>
+      <div class="form-group" style="margin:0;">
+        <label class="form-label">Round 3 Timer (seconds)</label>
+        <input type="number" name="round3_timer" value="{{ settings.round3_timer }}"
+          min="0" max="3600" class="form-control" placeholder="0 = no timer">
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">Save Timers</button>
+    <div style="font-size:0.8rem;color:var(--muted);margin-top:0.5rem;">Set to 0 to disable timer for that round.</div>
+  </form>
+</div>
+{% endblock %}
