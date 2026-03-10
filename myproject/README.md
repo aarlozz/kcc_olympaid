@@ -50,5 +50,5 @@ python manage.py runserver
 
 ## Author
 
-Subash Rajkarnikar
+Kiran Silwal
 Kantipur City College
