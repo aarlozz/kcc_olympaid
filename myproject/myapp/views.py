@@ -1,12 +1,13 @@
+import json
+import time
+import secrets
 from django.shortcuts import render, redirect, get_object_or_404
-from django.http import JsonResponse
-from django.views.decorators.http import require_POST, require_GET
+from django.http import JsonResponse, StreamingHttpResponse
+from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib import messages
 from django.utils import timezone
 from django.db.models import Sum
-import json
-import secrets
 
 from .models import (
     Team, Question, QuestionRequest, Answer, Score, CompetitionSettings
@@ -42,6 +43,201 @@ def admin_required(view_func):
         return view_func(request, *args, **kwargs)
     wrapper.__name__ = view_func.__name__
     return wrapper
+
+
+# ─── SSE helpers ───────────────────────────────────────────────────────────────
+
+def _build_question_status(team, active_round):
+    """
+    Returns { question_number: status_string } for a given team and round.
+    Shared between the dashboard view and the SSE stream so logic stays DRY.
+    """
+    questions = Question.objects.filter(round=active_round).order_by('question_number')
+    question_status = {}
+
+    for q in questions:
+        if q.is_locked:
+            question_status[q.question_number] = 'taken'
+        else:
+            my_request = QuestionRequest.objects.filter(
+                team=team, question=q
+            ).first()
+            if my_request:
+                if my_request.status == QuestionRequest.STATUS_APPROVED:
+                    question_status[q.question_number] = 'approved'
+                elif my_request.status == QuestionRequest.STATUS_ANSWERED:
+                    question_status[q.question_number] = 'answered'
+                else:
+                    question_status[q.question_number] = 'requested'
+            else:
+                other = QuestionRequest.objects.filter(
+                    question=q,
+                    status__in=[
+                        QuestionRequest.STATUS_APPROVED,
+                        QuestionRequest.STATUS_ANSWERED,
+                    ]
+                ).first()
+                question_status[q.question_number] = 'taken' if other else 'available'
+
+    return question_status
+
+
+def _build_approved_map(team, active_round):
+    """Returns { question_number: request_id } for a team's approved requests."""
+    approved_map = {}
+    for req in QuestionRequest.objects.filter(
+        team=team,
+        status=QuestionRequest.STATUS_APPROVED,
+        round=active_round,
+    ):
+        approved_map[req.question.question_number] = req.pk
+    return approved_map
+
+
+def _sse_event(data: dict) -> str:
+    """Format a dict as a valid SSE data frame."""
+    return f"data: {json.dumps(data)}\n\n"
+
+
+def _sse_keepalive() -> str:
+    """SSE comment line — keeps the connection alive through proxies."""
+    return ": keepalive\n\n"
+
+
+# ─── SSE Endpoints ─────────────────────────────────────────────────────────────
+
+def stream_question_status(request):
+    """
+    SSE stream for team dashboards.
+
+    Each team browser opens ONE persistent connection here.
+    The server pushes a JSON snapshot whenever the question-status changes,
+    so the page updates instantly without any manual refresh.
+
+    Add to urls.py:
+        path('stream/question-status/', views.stream_question_status, name='stream_question_status'),
+    """
+    team = get_team_from_session(request)
+    if not team:
+        return StreamingHttpResponse(status=403)
+
+    def event_stream():
+        last_snapshot = None
+        last_round = None
+        keepalive_ticks = 0
+
+        while True:
+            try:
+                settings = CompetitionSettings.get_settings()
+                active_round = settings.active_round
+
+                # Round changed → force a push on the next comparison
+                if active_round != last_round:
+                    last_round = active_round
+                    last_snapshot = None
+
+                question_status = _build_question_status(team, active_round)
+                approved_map = _build_approved_map(team, active_round)
+
+                pending_approved = QuestionRequest.objects.filter(
+                    team=team,
+                    status=QuestionRequest.STATUS_APPROVED,
+                    round=active_round,
+                ).first()
+
+                snapshot = {
+                    'question_status': question_status,
+                    'approved_map': approved_map,
+                    'pending_approved_id': pending_approved.pk if pending_approved else None,
+                    'pending_approved_qnum': (
+                        pending_approved.question.question_number
+                        if pending_approved else None
+                    ),
+                    'active_round': active_round,
+                    'competition_started': settings.competition_started,
+                    'competition_ended': settings.competition_ended,
+                }
+
+                # Only push when something actually changed — saves bandwidth
+                if snapshot != last_snapshot:
+                    last_snapshot = snapshot
+                    yield _sse_event(snapshot)
+
+                # Keepalive every ~30 s (10 ticks × 3 s sleep)
+                keepalive_ticks += 1
+                if keepalive_ticks >= 10:
+                    keepalive_ticks = 0
+                    yield _sse_keepalive()
+
+                time.sleep(3)
+
+            except GeneratorExit:
+                break   # Client disconnected cleanly
+            except Exception:
+                time.sleep(5)   # Brief back-off on DB errors, then retry
+                continue
+
+    response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
+    response['Cache-Control'] = 'no-cache'
+    response['X-Accel-Buffering'] = 'no'   # Disable Nginx buffering
+    return response
+
+
+def stream_admin_status(request):
+    """
+    SSE stream for the admin dashboard.
+
+    Pushes pending-request counts so the admin sees new requests
+    appear in real time without refreshing.
+
+    Add to urls.py:
+        path('stream/admin-status/', views.stream_admin_status, name='stream_admin_status'),
+    """
+    if not request.session.get('is_admin'):
+        return StreamingHttpResponse(status=403)
+
+    def event_stream():
+        last_snapshot = None
+
+        while True:
+            try:
+                pending_qs = QuestionRequest.objects.filter(
+                    status=QuestionRequest.STATUS_PENDING
+                ).select_related('team', 'question').order_by('-requested_at')
+
+                pending_data = [
+                    {
+                        'id': r.pk,
+                        'team': r.team.name,
+                        'question_number': r.question.question_number,
+                        'round': r.round,
+                        'requested_at': r.requested_at.strftime('%H:%M:%S'),
+                    }
+                    for r in pending_qs
+                ]
+
+                snapshot = {
+                    'pending_requests': pending_data,
+                    'pending_count': len(pending_data),
+                }
+
+                if snapshot != last_snapshot:
+                    last_snapshot = snapshot
+                    yield _sse_event(snapshot)
+
+                yield _sse_keepalive()
+                time.sleep(3)
+
+            except GeneratorExit:
+                break
+            except Exception:
+                time.sleep(5)
+                continue
+
+    response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
+    response['Cache-Control'] = 'no-cache'
+    response['X-Accel-Buffering'] = 'no'
+    return response
 
 
 # ─── Auth Views ────────────────────────────────────────────────────────────────
@@ -87,39 +283,10 @@ def team_dashboard(request, team=None):
     settings = CompetitionSettings.get_settings()
     active_round = settings.active_round
 
-    # Get all questions for the active round
     questions = Question.objects.filter(round=active_round).order_by('question_number')
+    question_status = _build_question_status(team, active_round)
+    approved_map = _build_approved_map(team, active_round)
 
-    # Build status map for each question number
-    question_status = {}
-    for q in questions:
-        # Check if lockedused by any team
-        if q.is_locked:
-            question_status[q.question_number] = 'taken'
-        else:
-            # Check if THIS team requested it
-            my_request = QuestionRequest.objects.filter(
-                team=team, question=q
-            ).first()
-            if my_request:
-                if my_request.status == QuestionRequest.STATUS_APPROVED:
-                    question_status[q.question_number] = 'approved'
-                elif my_request.status == QuestionRequest.STATUS_ANSWERED:
-                    question_status[q.question_number] = 'answered'
-                else:
-                    question_status[q.question_number] = 'requested'
-            else:
-                # Check if another team has an approvedanswered request
-                other_request = QuestionRequest.objects.filter(
-                    question=q,
-                    status__in=[QuestionRequest.STATUS_APPROVED, QuestionRequest.STATUS_ANSWERED]
-                ).first()
-                if other_request:
-                    question_status[q.question_number] = 'taken'
-                else:
-                    question_status[q.question_number] = 'available'
-
-    # Check for an approved question waiting for this team
     pending_approved = QuestionRequest.objects.filter(
         team=team,
         status=QuestionRequest.STATUS_APPROVED,
@@ -128,24 +295,13 @@ def team_dashboard(request, team=None):
 
     timer = settings.get_timer_for_round(active_round)
 
-    # Build a flat dict with question_number (int) -> status string
-    # Pass it as JSON for the template JS
-    import json as _json
-    question_status_json = _json.dumps(question_status)
-
-    # Build approved request map: question_number -> request_id
-    approved_map = {}
-    for req in QuestionRequest.objects.filter(team=team, status=QuestionRequest.STATUS_APPROVED, round=active_round):
-        approved_map[req.question.question_number] = req.pk
-    approved_map_json = _json.dumps(approved_map)
-
     return render(request, 'team_dashboard.html', {
         'team': team,
         'settings': settings,
         'questions': questions,
         'question_status': question_status,
-        'question_status_json': question_status_json,
-        'approved_map_json': approved_map_json,
+        'question_status_json': json.dumps(question_status),
+        'approved_map_json': json.dumps(approved_map),
         'pending_approved': pending_approved,
         'timer': timer,
         'active_round': active_round,
@@ -167,7 +323,6 @@ def request_question(request, team=None):
     if question.is_locked:
         return JsonResponse({'success': False, 'error': 'Question already taken'})
 
-    # Check if another team already has approvedanswered this
     existing = QuestionRequest.objects.filter(
         question=question,
         status__in=[QuestionRequest.STATUS_APPROVED, QuestionRequest.STATUS_ANSWERED]
@@ -175,7 +330,6 @@ def request_question(request, team=None):
     if existing:
         return JsonResponse({'success': False, 'error': 'Question already taken by another team'})
 
-    # Check if this team already requested it
     already = QuestionRequest.objects.filter(team=team, question=question).exists()
     if already:
         return JsonResponse({'success': False, 'error': 'Already requested'})
@@ -208,7 +362,6 @@ def answer_question(request, request_id, team=None):
             messages.error(request, 'Please select a valid answer.')
             return redirect('answer_question', request_id=request_id)
 
-        # Check if already answered
         if Answer.objects.filter(team=team, question=question).exists():
             messages.warning(request, 'You already answered this question.')
             return redirect('team_dashboard')
@@ -221,7 +374,6 @@ def answer_question(request, request_id, team=None):
             round=q_request.round
         )
 
-        # Create empty score record for admin to fill
         Score.objects.create(
             team=team,
             answer=answer,
@@ -235,7 +387,7 @@ def answer_question(request, request_id, team=None):
         question.is_locked = True
         question.save()
 
-        messages.success(request, f'Answer submitted! Awaiting score from admin.')
+        messages.success(request, 'Answer submitted! Awaiting score from admin.')
         return redirect('team_dashboard')
 
     options = [
@@ -256,7 +408,7 @@ def answer_question(request, request_id, team=None):
 
 @team_required
 def check_approval(request, team=None):
-    """Polling endpoint for teams to check if their request was approved."""
+    """Legacy polling fallback — kept for backwards compatibility."""
     settings = CompetitionSettings.get_settings()
     approved = QuestionRequest.objects.filter(
         team=team,
@@ -366,8 +518,6 @@ def admin_questions(request):
                 count = 0
                 errors = []
 
-                # Try multi-sheet format first (each sheet = one round)
-                # Sheet names like "Round 1", "Round 2", "Round 3" or just "1","2","3"
                 def parse_round_number(name):
                     import re
                     m = re.search(r'\d+', str(name))
@@ -376,7 +526,6 @@ def admin_questions(request):
                 multi_sheet = any(parse_round_number(s) for s in sheet_names)
 
                 if multi_sheet and len(sheet_names) > 1:
-                    # Multi-sheet: each sheet is a round
                     for sheet in sheet_names:
                         round_num = parse_round_number(sheet)
                         if round_num is None:
@@ -384,7 +533,6 @@ def admin_questions(request):
                         df = xl.parse(sheet)
                         df.columns = [str(c).strip() for c in df.columns]
 
-                        # Flexible column name mapping
                         col_map = {}
                         for col in df.columns:
                             cl = col.lower().replace(' ', '_').replace('-', '_')
@@ -430,7 +578,6 @@ def admin_questions(request):
                                 errors.append(f'Sheet "{sheet}" row {idx+2}: {row_err}')
 
                 else:
-                    # Single-sheet format with Round column
                     df = xl.parse(sheet_names[0])
                     df.columns = [str(c).strip() for c in df.columns]
 
@@ -489,13 +636,46 @@ def admin_questions(request):
             q = get_object_or_404(Question, pk=q_id)
             q.is_locked = False
             q.save()
-            messages.success(request, f'Question {q.question_number} unlocked.')
+
+            cancelled = QuestionRequest.objects.filter(
+                question=q,
+                status__in=[
+                    QuestionRequest.STATUS_APPROVED,
+                    QuestionRequest.STATUS_PENDING,
+                ]
+            ).update(status=QuestionRequest.STATUS_REJECTED)
+
+            messages.success(
+                request,
+                f'Question {q.question_number} unlocked and re-opened '
+                f'({cancelled} pending/approved request(s) cancelled).'
+            )
+
+        elif action == 'full_reset_question':
+            q_id = request.POST.get('question_id')
+            q = get_object_or_404(Question, pk=q_id)
+
+            answers = Answer.objects.filter(question=q)
+            score_count, _ = Score.objects.filter(answer__in=answers).delete()
+            answer_count, _ = answers.delete()
+            req_count, _ = QuestionRequest.objects.filter(question=q).delete()
+
+            q.is_locked = False
+            q.save()
+
+            messages.success(
+                request,
+                f'Question {q.question_number} fully reset '
+                f'({answer_count} answer(s), {score_count} score(s), '
+                f'{req_count} request(s) removed).'
+            )
 
         elif action == 'lock':
             q_id = request.POST.get('question_id')
             q = get_object_or_404(Question, pk=q_id)
             q.is_locked = True
             q.save()
+            messages.success(request, f'Question {q.question_number} locked.')
 
         elif action == 'delete_all':
             Question.objects.all().delete()
@@ -503,7 +683,13 @@ def admin_questions(request):
 
         elif action == 'unlock_all':
             Question.objects.all().update(is_locked=False)
-            messages.success(request, 'All questions unlocked.')
+            QuestionRequest.objects.filter(
+                status__in=[
+                    QuestionRequest.STATUS_APPROVED,
+                    QuestionRequest.STATUS_PENDING,
+                ]
+            ).update(status=QuestionRequest.STATUS_REJECTED)
+            messages.success(request, 'All questions unlocked and re-opened.')
 
         return redirect('admin_questions')
 
@@ -573,7 +759,6 @@ def admin_scoring(request):
         'team', 'question', 'score'
     ).order_by('-submitted_at')
 
-    # Ensure every answer has a score object
     for answer in answers:
         if not hasattr(answer, 'score') or answer.score is None:
             Score.objects.get_or_create(
@@ -582,7 +767,6 @@ def admin_scoring(request):
             )
 
     answers = Answer.objects.select_related('team', 'question', 'score').order_by('-submitted_at')
-
     return render(request, 'admin_scoring.html', {'answers': answers})
 
 
@@ -653,8 +837,6 @@ def admin_leaderboard(request):
         })
 
     leaderboard.sort(key=lambda x: x['total'], reverse=True)
-
-    # Add rank
     for i, entry in enumerate(leaderboard):
         entry['rank'] = i + 1
 
