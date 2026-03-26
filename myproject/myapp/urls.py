@@ -12,6 +12,10 @@ urlpatterns = [
     path('answer/<int:request_id>/', views.answer_question, name='answer_question'),
     path('check-approval/', views.check_approval, name='check_approval'),
 
+    # SSE streams (real-time, no refresh needed)
+    path('stream/question-status/', views.stream_question_status, name='stream_question_status'),
+    path('stream/admin-status/', views.stream_admin_status, name='stream_admin_status'),
+
     # Public pages
     path('leaderboard/', views.public_leaderboard, name='leaderboard'),
     path('results/', views.final_results, name='final_results'),
