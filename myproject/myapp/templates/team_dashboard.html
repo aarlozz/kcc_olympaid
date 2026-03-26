@@ -61,7 +61,7 @@
     <span style="display:inline-flex;align-items:center;padding:0.3rem 1rem;border-radius:20px;
       background:rgba(255,215,0,0.1);border:1px solid rgba(255,215,0,0.3);
       font-family:'Cinzel',serif;font-size:0.85rem;color:var(--gold);letter-spacing:2px;">
-      Round {{ active_round }}
+      Round <span id="active-round-label">{{ active_round }}</span>
     </span>
     {% if settings.competition_ended %}<a href="/results/" class="btn btn-gold btn-sm">Final Results</a>{% endif %}
     <a href="/leaderboard/" class="btn btn-outline btn-sm">Leaderboard</a>
@@ -69,6 +69,7 @@
   </div>
 </div>
 
+{# Approved banner — shown on page load if already approved; SSE manages it after that #}
 {% if pending_approved %}
 <div class="approved-banner fade-in" id="approved-banner">
   <div style="font-size:1.5rem;margin-bottom:0.4rem;">&#9889;</div>
@@ -93,7 +94,7 @@
   </div>
 
   {% if not settings.competition_started %}
-  <div style="text-align:center;padding:3rem;color:var(--muted);">
+  <div style="text-align:center;padding:3rem;color:var(--muted);" id="waiting-msg">
     <div style="font-size:3rem;margin-bottom:1rem;">&#9203;</div>
     <div style="font-family:'Cinzel',serif;font-size:1.1rem;color:var(--gold);letter-spacing:2px;">Waiting to Begin</div>
     <div style="margin-top:0.5rem;">The admin will start the competition shortly.</div>
@@ -135,102 +136,165 @@
 {% endif %}
 
 <script>
-const STATUS_MAP   = {{ question_status_json|safe }};
-const APPROVED_MAP = {{ approved_map_json|safe }};
+// ── Initial state from Django (used on first render) ──────────────────────────
+let STATUS_MAP   = {{ question_status_json|safe }};
+let APPROVED_MAP = {{ approved_map_json|safe }};
+const TIMER_SECS = {{ timer|default:0 }};
 const LABELS = { available:'Select', requested:'Pending', approved:'Go!', taken:'Taken', answered:'Done' };
-const CSRF = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '';
+const CSRF   = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '';
 
-function applyStatuses() {
-  Object.entries(STATUS_MAP).forEach(([num, status]) => {
+// ── Apply status map to all buttons ──────────────────────────────────────────
+function applyStatuses(statusMap, approvedMap) {
+  Object.entries(statusMap).forEach(([num, status]) => {
     num = parseInt(num);
     const btn = document.getElementById('qbtn-' + num);
     const lbl = document.getElementById('qlabel-' + num);
     if (!btn) return;
+
     btn.className = 'q-btn ' + (status || 'available');
     if (lbl) lbl.textContent = LABELS[status] || 'Select';
     btn.onclick = null;
+    btn.style.opacity = '1';
+    btn.style.pointerEvents = 'auto';
+
     if (!status || status === 'available') {
       btn.onclick = () => requestQuestion(num, btn);
-    } else if (status === 'approved' && APPROVED_MAP[num]) {
-      btn.onclick = () => { window.location = '/answer/' + APPROVED_MAP[num] + '/'; };
+    } else if (status === 'approved' && approvedMap[num]) {
+      btn.onclick = () => { window.location = '/answer/' + approvedMap[num] + '/'; };
+    } else {
+      btn.style.pointerEvents = 'none';
     }
   });
 }
-document.addEventListener('DOMContentLoaded', applyStatuses);
 
+document.addEventListener('DOMContentLoaded', () => applyStatuses(STATUS_MAP, APPROVED_MAP));
+
+// ── Handle approved-banner visibility ────────────────────────────────────────
+function syncApprovedBanner(approvedId, approvedQnum) {
+  const existing = document.getElementById('approved-banner');
+
+  if (approvedId) {
+    if (existing) {
+      // Update the link in case question number changed
+      const link = existing.querySelector('a');
+      if (link) link.href = '/answer/' + approvedId + '/';
+      return;
+    }
+    // Create fresh banner
+    const banner = document.createElement('div');
+    banner.id = 'approved-banner';
+    banner.className = 'approved-banner fade-in';
+    banner.innerHTML =
+      '<div style="font-size:1.5rem;margin-bottom:0.4rem;">&#9889;</div>'
+      + '<div style="font-family:Cinzel,serif;font-size:1.1rem;color:var(--accent);letter-spacing:2px;margin-bottom:0.3rem;">Question ' + approvedQnum + ' is Ready!</div>'
+      + '<div style="color:var(--muted);font-size:0.9rem;margin-bottom:1rem;">Admin approved — answer now!</div>'
+      + '<a href="/answer/' + approvedId + '/" class="btn btn-primary">Answer Now</a>';
+    const firstCard = document.querySelector('.card');
+    if (firstCard) firstCard.before(banner);
+
+    if (TIMER_SECS > 0) startTimer(TIMER_SECS);
+  } else {
+    if (existing) existing.remove();
+  }
+}
+
+// ── Question request (unchanged) ─────────────────────────────────────────────
 function requestQuestion(number, btn) {
-  btn.style.opacity = '0.5'; btn.style.pointerEvents = 'none';
+  btn.style.opacity = '0.5';
+  btn.style.pointerEvents = 'none';
   fetch('/request-question/', {
     method: 'POST',
-    headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRFToken':CSRF},
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': CSRF },
     body: 'question_number=' + number
   }).then(r => r.json()).then(data => {
     if (data.success) {
-      btn.className = 'q-btn requested'; btn.onclick = null;
-      btn.style.opacity = '1'; btn.style.pointerEvents = 'none';
+      // Optimistic UI update — SSE will confirm shortly
+      btn.className = 'q-btn requested';
+      btn.onclick = null;
+      btn.style.opacity = '1';
+      btn.style.pointerEvents = 'none';
       const lbl = document.getElementById('qlabel-' + number);
       if (lbl) lbl.textContent = 'Pending';
       STATUS_MAP[number] = 'requested';
       toast('Question ' + number + ' requested!', 'success');
     } else {
-      btn.style.opacity = '1'; btn.style.pointerEvents = 'auto';
+      btn.style.opacity = '1';
+      btn.style.pointerEvents = 'auto';
       toast(data.error || 'Failed', 'error');
     }
   });
 }
 
-function checkApproval() {
-  fetch('/check-approval/').then(r => r.json()).then(data => {
-    if (data.approved) {
-      const num = data.question_number, rid = data.request_id;
-      APPROVED_MAP[num] = rid; STATUS_MAP[num] = 'approved';
-      const btn = document.getElementById('qbtn-' + num);
-      const lbl = document.getElementById('qlabel-' + num);
-      if (btn) {
-        btn.className = 'q-btn approved';
-        btn.style.pointerEvents = 'auto'; btn.style.opacity = '1';
-        btn.onclick = () => { window.location = '/answer/' + rid + '/'; };
-        if (lbl) lbl.textContent = 'Go!';
-      }
-      if (!document.getElementById('approved-banner')) {
-        const banner = document.createElement('div');
-        banner.id = 'approved-banner'; banner.className = 'approved-banner fade-in';
-        banner.innerHTML = '<div style="font-size:1.5rem;margin-bottom:0.4rem;">&#9889;</div>'
-          + '<div style="font-family:Cinzel,serif;font-size:1.1rem;color:var(--accent);letter-spacing:2px;margin-bottom:0.3rem;">Question ' + num + ' is Ready!</div>'
-          + '<div style="color:var(--muted);font-size:0.9rem;margin-bottom:1rem;">Click to answer now!</div>'
-          + '<a href="/answer/' + rid + '/" class="btn btn-primary">Answer Now</a>';
-        const firstCard = document.querySelector('.card');
-        if (firstCard) firstCard.before(banner);
-      }
-      {% if timer > 0 %}startTimer({{ timer }});{% endif %}
-    }
-  }).catch(() => {});
-}
-setInterval(checkApproval, 3000);
+// ── SSE — replaces setInterval(checkApproval, 3000) ──────────────────────────
+(function connectSSE() {
+  const es = new EventSource('/stream/question-status/');
 
+  es.onmessage = function (event) {
+    const data = JSON.parse(event.data);
+
+    // 1. Update local maps
+    STATUS_MAP   = data.question_status;
+    APPROVED_MAP = data.approved_map;
+
+    // 2. Redraw all buttons
+    applyStatuses(STATUS_MAP, APPROVED_MAP);
+
+    // 3. Sync approved banner
+    syncApprovedBanner(data.pending_approved_id, data.pending_approved_qnum);
+
+    // 4. If the round changed, reload so the question list refreshes
+    const roundLabel = document.getElementById('active-round-label');
+    if (roundLabel && data.active_round != parseInt(roundLabel.textContent)) {
+      window.location.reload();
+    }
+
+    // 5. Competition ended → go to results
+    if (data.competition_ended) {
+      window.location.href = '/results/';
+    }
+
+    // 6. Competition just started → remove "waiting" message without full reload
+    const waitingMsg = document.getElementById('waiting-msg');
+    if (waitingMsg && data.competition_started) {
+      window.location.reload();   // simplest way to render the question grid
+    }
+  };
+
+  es.onerror = function () {
+    // Browser auto-reconnects — nothing to do.
+    // Fallback: if SSE keeps failing, poll every 5 s as a safety net.
+    console.warn('SSE error — browser will retry automatically.');
+  };
+})();
+
+// ── Timer (unchanged) ────────────────────────────────────────────────────────
 {% if timer > 0 %}
 let timerRunning = false;
 function startTimer(secs) {
-  if (timerRunning) return; timerRunning = true;
+  if (timerRunning) return;
+  timerRunning = true;
   document.getElementById('timer-area').style.display = 'block';
   let rem = secs;
   const el = document.getElementById('timer-val');
   const iv = setInterval(() => {
-    const m = Math.floor(rem/60), s = rem%60;
-    el.textContent = (m>0?m+':':'') + String(s).padStart(2,'0');
-    if (rem<=10) el.style.color = 'var(--danger)';
-    if (rem<=0) { clearInterval(iv); el.textContent='0:00'; toast('Time is up!','error'); }
+    const m = Math.floor(rem / 60), s = rem % 60;
+    el.textContent = (m > 0 ? m + ':' : '') + String(s).padStart(2, '0');
+    if (rem <= 10) el.style.color = 'var(--danger)';
+    if (rem <= 0) { clearInterval(iv); el.textContent = '0:00'; toast('Time is up!', 'error'); }
     rem--;
   }, 1000);
 }
 {% if pending_approved %}startTimer({{ timer }});{% endif %}
 {% endif %}
 
+// ── Toast (unchanged) ────────────────────────────────────────────────────────
 function toast(msg, type) {
   const t = document.createElement('div');
-  t.className = 'message ' + type; t.textContent = msg;
+  t.className = 'message ' + type;
+  t.textContent = msg;
   t.style.cssText = 'position:fixed;top:80px;right:20px;z-index:9999;max-width:320px;animation:fadeIn 0.3s ease;min-width:220px;';
-  document.body.appendChild(t); setTimeout(() => t.remove(), 4000);
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
 }
 </script>
 {% endblock %}
