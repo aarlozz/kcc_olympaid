@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-tr%_va+fi=%72=o8dlhr)cs(f=27k=^0=!ut@v!smv7l&y#u=m
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["*"]
 
 
 # Application definition
@@ -110,7 +110,7 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 
 USE_TZ = True
-
+STATIC_ROOT = 'staticfiles'
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
